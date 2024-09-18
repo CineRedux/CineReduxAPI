@@ -1,10 +1,7 @@
 from flask import Flask, request, jsonify
-import requests, re, json, os
+import requests, re, json, os, awsgi
 from bs4 import BeautifulSoup
 from string import punctuation
-from dotenv import load_dotenv
-
-load_dotenv()
 
 class MovieAPI:
     def __init__(self):
@@ -13,15 +10,16 @@ class MovieAPI:
         self.image_base_url = "https://image.tmdb.org/t/p/w500"
         self.app = Flask(__name__)
         self.setup_routes()
+    
 
     def setup_routes(self):
         self.app.add_url_rule('/', 'index', self.index, methods=['GET'])
-        self.app.add_url_rule('/api/trending', 'get_popular', self.get_popular, methods=['GET'])
-        self.app.add_url_rule('/api/movie', 'search_for_movie', self.search_for_movie, methods=['GET'])
-        self.app.add_url_rule('/api/score', 'score', self.score, methods=['GET']) #ToDo - secure behind internal-call header!!
+        self.app.add_url_rule('/trending', 'get_popular', self.get_popular, methods=['GET'])
+        self.app.add_url_rule('/movie', 'search_for_movie', self.search_for_movie, methods=['GET'])
+        self.app.add_url_rule('/score', 'score', self.score, methods=['GET']) #ToDo - secure behind internal-call header!!
 
     def index(self):
-        return jsonify(status=200, message='Welcome to CineRedux')
+        return jsonify(status=200, message='OK, Welcome to CineRedux')
 
     def get_rotten_tomatoes_rating(self, query):
         formatted_query = re.sub(f"[{re.escape(punctuation)}]", '', query)
@@ -61,26 +59,28 @@ class MovieAPI:
         provided_api_key = request.args.get('api_key')
         if provided_api_key != self.expected_api_key:
             return jsonify({"error": "Unauthorized access: Invalid API key"}), 401
-
-        rating_url = f"http://127.0.0.1:8080/api/score?"
+        base_url = request.host_url
+        rating_url = f"{base_url}score?"
+        #rating_url = f"http://127.0.0.1:8080/api/score?"
         url = "https://api.themoviedb.org/3/trending/movie/week"
         params = {'api_key': self.apikey}
         response = requests.get(url, params=params)
         movies = response.json()
         top_movies = []
-
-        custom_header = {"X-Internal-Call": "true"}
-
+        
         for index, movie in enumerate(movies['results'][:10]):
+            
             title = re.sub('&', 'and', movie.get('title'))
-            ratings_response = requests.get(rating_url, f"query={title}", headers=custom_header)
-            if not ratings_response.status_code == 404:
+            with self.app.test_request_context(query_string={'query': title}, headers={"X-Internal-Call": "true"}):
+                score_response = self.score()
+            if not score_response.status_code == 404:
                 ratingType = "tomatometer"
-                ratings = ratings_response.json()
+                ratings = score_response.get_json()
                 rating = ratings.get('Tomatometer').get('ratingValue')
             else:
                 ratingType = "tmdbScore"
                 rating = f"{round(movie.get('vote_average'), 2)}/10"
+            
             
             movie_info = {
                 'movie': index + 1,
@@ -92,6 +92,7 @@ class MovieAPI:
                 'backdrop': f"{self.image_base_url}{movie.get('backdrop_path')}",
                 'trailer': self.get_trailer(movie['id'])
             }
+            #return {'Movie' : movie_info}
             top_movies.append(movie_info)
         
         return {'TopMovies': top_movies}
@@ -132,8 +133,9 @@ class MovieAPI:
 
         if request.headers.get("X-Internal-Call") != "true":
             return jsonify({"error": "Unauthorized access"}), 403
-
+        
         query = request.args.get('query')
+        
         if not query:
             return jsonify({"error": "Query parameter is required"}), 400
         
@@ -141,8 +143,16 @@ class MovieAPI:
         if result:
             return jsonify(result)
         else:
-            return jsonify({"error": "Rating not found"}), 404
+            response = jsonify({"error": "Rating not found"})
+            response.status_code = 404
+            return response
+    
+    def lambda_handler(self, event, context):
+        if 'httpMethod' not in event:
+            raise KeyError("httpMethod key not found in event. This Lambda expects events triggered by an API Gateway.")
+        return awsgi.response(self.app, event, context, base64_content_types={"image/png"})
 
-if __name__ == '__main__':
-    api = MovieAPI()
-    api.app.run('127.0.0.1', 8080, debug=True)
+def lambda_handler(event, context):
+    movie_api = MovieAPI()
+    return movie_api.lambda_handler(event, context)
+
