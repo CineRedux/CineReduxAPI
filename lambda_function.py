@@ -86,8 +86,9 @@ class MovieAPI:
                 'movie': index + 1,
                 'title': movie.get('title'),
                 'overview': movie.get('overview'),
+                'year' : movie.get('release_date').split('-')[0],
                 'id': movie['id'],
-                ratingType: rating,
+                ratingType : rating,
                 'poster': f"{self.image_base_url}{movie.get('poster_path')}",
                 'backdrop': f"{self.image_base_url}{movie.get('backdrop_path')}",
                 'trailer': self.get_trailer(movie['id'])
@@ -119,6 +120,7 @@ class MovieAPI:
                     'movie': index + 1,
                     'title': movie.get('title'),
                     'overview': movie.get('overview'),
+                    'year' : movie.get('release_date').split('-')[0],
                     'id': movie['id'],
                     'tmdbScore': f"{round(movie.get('vote_average'), 2)}/10",
                     'poster': f"{self.image_base_url}{movie.get('poster_path')}",
