@@ -133,7 +133,12 @@ class MovieAPI:
             return jsonify({"error": "Movie not found"}), e
 
     def get_movie_info(self, id):
-        rating_url = "http://127.0.0.1:8080/score?"
+        provided_api_key = request.args.get('api_key')
+        if provided_api_key != self.expected_api_key:
+            return jsonify({"error": "Unauthorized access: Invalid API key"}), 401
+        base_url = request.host_url  # Will fetch the base URL dynamically
+        rating_url = f"{base_url}score?"
+        print(rating_url)
         url = f"https://api.themoviedb.org/3/movie/{id}"
         params = {'api_key': self.apikey}
         response = requests.get(url, params=params)
