@@ -15,8 +15,9 @@ class MovieAPI:
     def setup_routes(self):
         self.app.add_url_rule('/', 'index', self.index, methods=['GET'])
         self.app.add_url_rule('/trending', 'get_popular', self.get_popular, methods=['GET'])
-        self.app.add_url_rule('/movie', 'search_for_movie', self.search_for_movie, methods=['GET'])
+        self.app.add_url_rule('/search', 'search_for_movie', self.search_for_movie, methods=['GET'])
         self.app.add_url_rule('/score', 'score', self.score, methods=['GET']) #ToDo - secure behind internal-call header!!
+        self.app.add_url_rule('/movie/<int:id>', 'get_movie_info', self.get_movie_info, methods=['GET'])
 
     def index(self):
         return jsonify(status=200, message='OK, Welcome to CineRedux')
@@ -59,7 +60,7 @@ class MovieAPI:
         provided_api_key = request.args.get('api_key')
         if provided_api_key != self.expected_api_key:
             return jsonify({"error": "Unauthorized access: Invalid API key"}), 401
-        base_url = request.host_url
+        base_url = request.host_url  # Will fetch the base URL dynamically
         rating_url = f"{base_url}score?"
         #rating_url = f"http://127.0.0.1:8080/api/score?"
         url = "https://api.themoviedb.org/3/trending/movie/week"
@@ -73,9 +74,11 @@ class MovieAPI:
             title = re.sub('&', 'and', movie.get('title'))
             with self.app.test_request_context(query_string={'query': title}, headers={"X-Internal-Call": "true"}):
                 score_response = self.score()
+            #ratings_response = requests.get(rating_url, f"query={title}")
             if not score_response.status_code == 404:
                 ratingType = "tomatometer"
                 ratings = score_response.get_json()
+                #return ratings
                 rating = ratings.get('Tomatometer').get('ratingValue')
             else:
                 ratingType = "tmdbScore"
@@ -86,9 +89,9 @@ class MovieAPI:
                 'movie': index + 1,
                 'title': movie.get('title'),
                 'overview': movie.get('overview'),
-                'year' : movie.get('release_date').split('-')[0],
                 'id': movie['id'],
                 ratingType : rating,
+                'year' : movie.get('release_date').split('-')[0],
                 'poster': f"{self.image_base_url}{movie.get('poster_path')}",
                 'backdrop': f"{self.image_base_url}{movie.get('backdrop_path')}",
                 'trailer': self.get_trailer(movie['id'])
@@ -115,7 +118,7 @@ class MovieAPI:
             response.raise_for_status()
             results = response.json()
             movies = results.get('results')
-            for index, movie in enumerate(movies):
+            for index, movie in enumerate(movies[:10]):
                 movie_info = {
                     'movie': index + 1,
                     'title': movie.get('title'),
@@ -130,7 +133,43 @@ class MovieAPI:
             return {'SimilarMovies': movie_results}
         except requests.exceptions.RequestException as e:
             return jsonify({"error": "Movie not found"}), e
-
+    
+    def get_movie_info(self, id):
+        provided_api_key = request.args.get('api_key')
+        if provided_api_key != self.expected_api_key:
+            return jsonify({"error": "Unauthorized access: Invalid API key"}), 401
+        base_url = request.host_url  # Will fetch the base URL dynamically
+        rating_url = f"{base_url}score?"
+        url = f"https://api.themoviedb.org/3/movie/{id}"
+        params = {'api_key': self.apikey}
+        response = requests.get(url, params=params)
+        movie = response.json()
+        genres = []
+        for genre in movie['genres']:
+            genres.append(genre['name'])
+        custom_header = {"X-Internal-Call": "true"}
+        title = re.sub('&', 'and', movie.get('title'))
+        with self.app.test_request_context(query_string={'query': title}, headers={"X-Internal-Call": "true"}):
+                score_response = self.score()
+        if not score_response.status_code == 404:
+            ratingType = "tomatometer"
+            ratings = score_response.get_json()
+            rating = ratings.get('Tomatometer').get('ratingValue')
+        else:
+            ratingType = "tmdbScore"
+            rating = f"{round(movie.get('vote_average'), 2)}/10"
+        movie_info = {
+            'title': movie.get('title'),
+            'overview': movie.get('overview'),
+            'year' : movie.get('release_date').split('-')[0],
+            'genres': genres,
+            'runtime': movie.get('runtime'),
+            ratingType : rating,
+            'poster': f"{self.image_base_url}{movie.get('poster_path')}",
+            'trailer': self.get_trailer(id)
+        }
+        return movie_info
+    
     def score(self):
 
         if request.headers.get("X-Internal-Call") != "true":
@@ -151,8 +190,9 @@ class MovieAPI:
     
     def lambda_handler(self, event, context):
         if 'httpMethod' not in event:
-            raise KeyError("httpMethod key not found in event. This Lambda expects events triggered by an API Gateway.")
-        return awsgi.response(self.app, event, context, base64_content_types={"image/png"})
+            raise KeyError("httpMethod key not found in event. This Lambda expects events triggered by an API Gateway.", event)
+
+        return awsgi.response(self.app, event, context)
 
 def lambda_handler(event, context):
     movie_api = MovieAPI()
