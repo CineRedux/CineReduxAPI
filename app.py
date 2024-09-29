@@ -17,8 +17,9 @@ class MovieAPI:
     def setup_routes(self):
         self.app.add_url_rule('/', 'index', self.index, methods=['GET'])
         self.app.add_url_rule('/trending', 'get_popular', self.get_popular, methods=['GET'])
-        self.app.add_url_rule('/movie', 'search_for_movie', self.search_for_movie, methods=['GET'])
+        self.app.add_url_rule('/search', 'search_for_movie', self.search_for_movie, methods=['GET'])
         self.app.add_url_rule('/score', 'score', self.score, methods=['GET']) #ToDo - secure behind internal-call header!!
+        self.app.add_url_rule('/movie/<int:id>', 'get_movie_info', self.get_movie_info, methods=['GET'])
 
     def index(self):
         return jsonify(status=200, message='Welcome to CineRedux')
@@ -56,6 +57,8 @@ class MovieAPI:
             if movie['type'] == "Trailer" and "Official Trailer" in movie['name']:
                 yt_url = f"https://www.youtube.com/watch?v={movie['key']}"
                 return yt_url
+
+    
 
     def get_popular(self):
         provided_api_key = request.args.get('api_key')
@@ -128,6 +131,37 @@ class MovieAPI:
             return {'SimilarMovies': movie_results}
         except requests.exceptions.RequestException as e:
             return jsonify({"error": "Movie not found"}), e
+
+    def get_movie_info(self, id):
+        rating_url = "http://127.0.0.1:8080/score?"
+        url = f"https://api.themoviedb.org/3/movie/{id}"
+        params = {'api_key': self.apikey}
+        response = requests.get(url, params=params)
+        movie = response.json()
+        genres = []
+        for genre in movie['genres']:
+            genres.append(genre['name'])
+        custom_header = {"X-Internal-Call": "true"}
+        title = re.sub('&', 'and', movie.get('title'))
+        ratings_response = requests.get(rating_url, f"query={title}", headers=custom_header)
+        if not ratings_response.status_code == 404:
+            ratingType = "tomatometer"
+            ratings = ratings_response.json()
+            rating = ratings.get('Tomatometer').get('ratingValue')
+        else:
+            ratingType = "tmdbScore"
+            rating = f"{round(movie.get('vote_average'), 2)}/10"
+        movie_info = {
+            'title': movie.get('title'),
+            'overview': movie.get('overview'),
+            'year' : movie.get('release_date').split('-')[0],
+            'genres': genres,
+            'runtime': movie.get('runtime'),
+            ratingType : rating,
+            'poster': f"{self.image_base_url}{movie.get('poster_path')}",
+            'trailer': self.get_trailer(id)
+        }
+        return movie_info
 
     def score(self):
 
