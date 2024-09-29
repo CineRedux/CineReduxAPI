@@ -16,9 +16,9 @@ class MovieAPI:
 
     def setup_routes(self):
         self.app.add_url_rule('/', 'index', self.index, methods=['GET'])
-        self.app.add_url_rule('/api/trending', 'get_popular', self.get_popular, methods=['GET'])
-        self.app.add_url_rule('/api/movie', 'search_for_movie', self.search_for_movie, methods=['GET'])
-        self.app.add_url_rule('/api/score', 'score', self.score, methods=['GET']) #ToDo - secure behind internal-call header!!
+        self.app.add_url_rule('/trending', 'get_popular', self.get_popular, methods=['GET'])
+        self.app.add_url_rule('/movie', 'search_for_movie', self.search_for_movie, methods=['GET'])
+        self.app.add_url_rule('/score', 'score', self.score, methods=['GET']) #ToDo - secure behind internal-call header!!
 
     def index(self):
         return jsonify(status=200, message='Welcome to CineRedux')
@@ -62,7 +62,7 @@ class MovieAPI:
         if provided_api_key != self.expected_api_key:
             return jsonify({"error": "Unauthorized access: Invalid API key"}), 401
 
-        rating_url = f"http://127.0.0.1:8080/api/score?"
+        rating_url = f"http://127.0.0.1:8080/score?"
         url = "https://api.themoviedb.org/3/trending/movie/week"
         params = {'api_key': self.apikey}
         response = requests.get(url, params=params)
@@ -88,7 +88,7 @@ class MovieAPI:
                 'overview': movie.get('overview'),
                 'year' : movie.get('release_date').split('-')[0],
                 'id': movie['id'],
-                ratingType : rating,
+                ratingType: rating,
                 'poster': f"{self.image_base_url}{movie.get('poster_path')}",
                 'backdrop': f"{self.image_base_url}{movie.get('backdrop_path')}",
                 'trailer': self.get_trailer(movie['id'])
@@ -114,12 +114,11 @@ class MovieAPI:
             response.raise_for_status()
             results = response.json()
             movies = results.get('results')
-            for index, movie in enumerate(movies):
+            for index, movie in enumerate(movies[:10]):
                 movie_info = {
                     'movie': index + 1,
                     'title': movie.get('title'),
                     'overview': movie.get('overview'),
-                    'year' : movie.get('release_date').split('-')[0],
                     'id': movie['id'],
                     'tmdbScore': f"{round(movie.get('vote_average'), 2)}/10",
                     'poster': f"{self.image_base_url}{movie.get('poster_path')}",
