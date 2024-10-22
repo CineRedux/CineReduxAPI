@@ -151,7 +151,7 @@ class MovieAPI:
         title = re.sub('&', 'and', movie.get('title'))
         with self.app.test_request_context(query_string={'query': title}, headers={"X-Internal-Call": "true"}):
                 score_response = self.score()
-        if not score_response.status_code == 404:
+        if not score_response.status_code == 404 and not score_response.json().get('Tomatometer').get('ratingValue') == None:
             ratingType = "tomatometer"
             ratings = score_response.get_json()
             rating = ratings.get('Tomatometer').get('ratingValue')
