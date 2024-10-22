@@ -151,7 +151,7 @@ class MovieAPI:
         custom_header = {"X-Internal-Call": "true"}
         title = re.sub('&', 'and', movie.get('title'))
         ratings_response = requests.get(rating_url, f"query={title}", headers=custom_header)
-        if not ratings_response.status_code == 404:
+        if not ratings_response.status_code == 404 and not ratings_response.json().get('Tomatometer').get('ratingValue') == None:
             ratingType = "tomatometer"
             ratings = ratings_response.json()
             rating = ratings.get('Tomatometer').get('ratingValue')
